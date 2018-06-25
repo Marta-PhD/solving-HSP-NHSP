@@ -1,0 +1,344 @@
+////////////////////////////////////////////////////////////////////////////////
+//
+// GetMonomials
+//
+////////////////////////////////////////////////////////////////////////////////
+function GetMonomials(R, d)
+   Mon := [];
+   n   := Rank(R);
+   for degree:=1 to d do
+      for a in MonomialsOfDegree(R, degree) do
+         for k:=n div 2 + 1 to n do
+            if IsDivisibleBy(a, R.k) then
+               Mon := Mon cat [a];
+               break k;
+            end if;
+         end for;
+      end for;
+   end for;
+   return Mon;
+end function;
+////////////////////////////////////////////////////////////////////////////////
+//
+// RandomSinglePoly
+// Generates uniformly at random a polynomial of degree d in the polynomial ring
+// R that vanishes on the subspace E.
+//
+////////////////////////////////////////////////////////////////////////////////
+function RandomSinglePoly(R, Mon, d)
+   pr := Characteristic(R);
+   n  := Rank(R);
+   repeat
+      p := &+[Random(Set([0..pr-1]))*Mon[j] : j in [1..#Mon]];
+   until TotalDegree(p) eq d;
+   return p;
+end function;
+////////////////////////////////////////////////////////////////////////////////
+//
+// RandomPoly
+// Generates two sets of m uniformly random polynomials of degree d in the
+// polynomial ring R vanishing on the subspace E.
+//
+////////////////////////////////////////////////////////////////////////////////
+function RandomPoly(R, m, d)
+   p := [];
+   q := [];
+   Mon  := GetMonomials(R, d);
+
+   p[1] := RandomSinglePoly(R, Mon, d);
+   q[1] := RandomSinglePoly(R, Mon, d);
+   Y1   := {p[1]};
+   Y2   := {q[1]};
+
+   for i:=2 to m do
+      repeat
+         p[i] := RandomSinglePoly(R, Mon, d);
+      until {p[i]} meet Y1 eq {};
+ 
+      Y1 := Y1 join {p[i]};
+   end for;
+
+   for i:=2 to m do
+      repeat
+         q[i] := RandomSinglePoly(R, Mon, d);
+      until {q[i]} meet Y2 eq {};
+
+      Y2:=Y2 join {q[i]};
+   end for;
+
+   return p, q;
+end function;
+////////////////////////////////////////////////////////////////////////////////
+//
+// VanishingSubspaces
+// Generates uniformly at random an n/2-dimensional subspace A over the field
+// F_{pr}^n and its orthogonal A^\bot, and other \lceil2\epsilon m\rceil
+// uniformly random subspaces of dimension n/2 over the same field.
+//
+////////////////////////////////////////////////////////////////////////////////
+function VanishingSubspaces(pr, n, delta)
+   E:=ZeroMatrix(GF(pr), n div 2, n);
+   for i:=1 to n div 2 do
+      E[i,i] := 1; // generation of the subspace E=(0|I)
+   end for;
+
+   repeat
+      A1:=Random(KMatrixSpace(GF(pr), n div 2, n div 2));
+   until Rank(A1) eq n div 2;
+   A:=Random(KMatrixSpace(GF(pr), n div 2, n));
+   for i:=1 to n div 2 do
+      for j:=1 to n div 2 do
+         A[i,j]:=A1[i,j];
+      end for;
+   end for;
+
+   LT,N := Solution(Transpose(A), Transpose(E));
+   W    := ZeroMatrix(GF(pr), n, n);
+   repeat
+      for i:=1 to n do
+         W[i] := W[i] + LT[i] + Random(N);
+      end for;
+      L := Transpose(W);
+   until Rank(L) eq n and A*L eq E;
+ 
+   AO     := KernelMatrix(Transpose(A));
+   LOT,NO := Solution(Transpose(AO), Transpose(E));
+   WO     := ZeroMatrix(GF(pr), n, n);
+   repeat
+      for i:=1 to n do
+         WO[i] := WO[i] + LOT[i] + Random(NO);
+      end for;
+      LO := Transpose(WO);
+   until Rank(LO) eq n and AO*LO eq E;
+ 
+   B := [];
+   for i:=1 to delta do
+      repeat
+         B[i] := Random(KMatrixSpace(GF(pr), n div 2, n));
+      until Rank(B[i]) eq n div 2;
+   end for;
+ 
+   LT:=[]; N:=[]; BL:=[];
+   for i:=1 to delta do
+      LT[i], N[i] := Solution(Transpose(B[i]), Transpose(E));
+      W := ZeroMatrix(GF(pr), n, n);
+      repeat
+         for j:=1 to n do
+            W[j] := W[j] + LT[i][j] + Random(N[i]);
+         end for;
+         BL[i] := Transpose(W);
+      until Rank(BL[i]) eq n and B[i]*BL[i] eq E;
+   end for;
+
+   BO:=[];
+   for i:=1 to delta do
+      repeat
+         BO[i] := Random(KMatrixSpace(GF(pr), n div 2, n));
+      until Rank(BO[i]) eq n div 2;
+   end for;
+
+   LOT:=[]; NO:=[]; BOL:=[];
+   for i:=1 to delta do
+      LOT[i], NO[i] := Solution(Transpose(BO[i]), Transpose(E));
+      WO := ZeroMatrix(GF(pr), n, n);
+      repeat
+         for j:=1 to n do
+            WO[j] := WO[j] + LOT[i][j] + Random(NO[i]);
+         end for;
+         BOL[i] := Transpose(WO);
+      until Rank(BOL[i]) eq n and BO[i]*BOL[i] eq E;
+   end for;
+
+   return A, AO, B, BO, L, LO, BL, BOL;
+end function;
+////////////////////////////////////////////////////////////////////////////////
+//
+// PublicPolys
+// Generates a list of indices K1 (resp. K2) such that (1 - \epsilon)m
+// polynomials with indices in K1 (resp. K2) vanish on A (resp. A^\bot); and
+// a list of indices J1 such that \epsilon m polynomials with indices in J1
+// (resp. J2) vanish in subspaces generated at random, one for each index.
+//
+////////////////////////////////////////////////////////////////////////////////
+function PublicPolys(R, m, d, delta)
+   pr := Characteristic(R);
+   n   := Rank(R);
+
+   J1  := [];
+   J2  := [];
+ 
+   for i:=1 to delta do
+      repeat
+         tmp := Random([1..m]);
+      until tmp notin J1;
+      J1 := J1 cat [tmp];
+   end for;
+ 
+   for i:=1 to delta do
+      repeat
+         tmp := Random([1..m]);
+      until tmp notin J2;
+      J2 := J2 cat [tmp];
+   end for;
+
+   Sort(~J1);
+   Sort(~J2);
+
+   K1 := [ x : x in [1..m] | x notin J1];
+   K2 := [ x : x in [1..m] | x notin J2];
+
+   pb, qb := RandomPoly(R, m, d);
+
+   T:=[]; BT:=[]; C:=[]; BC:=[];
+   for i:=1 to m do
+      T[i]  := Terms(pb[i]);
+      C[i]  := Coefficients(pb[i]);
+      BT[i] := Terms(qb[i]);
+      BC[i] := Coefficients(qb[i]);
+   end for;
+
+   S:=[];
+   for i:=1 to m do
+      S[i] := [];
+      for j:=1 to #T[i] do
+         S[i][j] := [];
+         for k:=1 to n do
+            S[i][j][k] := 0;
+            repeat
+               if IsDivisibleBy(T[i][j], R.k) then
+                  S[i][j][k] := S[i][j][k] + 1;
+                  T[i][j]    := T[i][j]/R.k;
+               end if;
+            until IsDivisibleBy(T[i][j], R.k) eq false;
+         end for;
+      end for;
+   end for;
+
+   BS:=[];
+   for i:=1 to m do
+      BS[i] := [];
+      for j:=1 to #BT[i] do
+         BS[i][j] := [];
+         for k:=1 to n do
+            BS[i][j][k] := 0;
+            repeat
+               if IsDivisibleBy(BT[i][j],R.k) then
+                  BS[i][j][k] := BS[i][j][k] + 1;
+                  BT[i][j]    := BT[i][j]/R.k;
+               end if;
+            until IsDivisibleBy(BT[i][j], R.k) eq false;
+         end for;
+      end for;
+   end for;
+
+   A, AO, B, BO, L, LO, BL, BOL := VanishingSubspaces(pr, n, delta);
+   Unk := Matrix(R, 1, n, [R.i   : i in [1..n]]);
+   NL  := Matrix(R, n, n, [L[i]  : i in [1..n]]);
+   NLO := Matrix(R, n, n, [LO[i] : i in [1..n]]);
+
+   NBL:=[]; NBOL:=[];
+   for i:=1 to delta do
+      NBL[i]  := Matrix(R, n, n, [BL[i][j]  : j in [1..n]]);
+      NBOL[i] := Matrix(R, n, n, [BOL[i][j] : j in [1..n]]);
+   end for;
+
+   xL  := Unk*NL;
+   xLO := Unk*NLO;
+   xBL :=[]; xBLO:=[];
+   for i:=1 to delta do
+      xBL[i]  := Unk*NBL[i];
+      xBLO[i] := Unk*NBOL[i];
+   end for;
+
+   p:=[]; q:=[]; b:=0;
+   for i:=1 to m do
+      if i in K1 then
+         p[i] := &+[C[i,j]*&*[xL[1][k]^S[i][j][k] : k in [1..n]
+                 | S[i][j][k] ne 0] : j in [1..#T[i]]];
+      else
+         b:=b+1;
+         p[i] := &+[C[i,j]*&*[xBL[b][1][k]^S[i][j][k] : k in [1..n]
+                 | S[i][j][k] ne 0] : j in [1..#T[i]]];
+      end if;
+   end for;
+ 
+   c:=0;
+   for i:=1 to m do
+      if i in K2 then
+         q[i] := &+[BC[i,j]*&*[xLO[1][k]^BS[i][j][k] : k in [1..n]
+                 | BS[i][j][k] ne 0] : j in [1..#BT[i]]];
+      else
+         c:=c+1;
+         q[i] := &+[BC[i,j]*&*[xBLO[c][1][k]^BS[i][j][k] : k in [1..n]
+                 | BS[i][j][k] ne 0] : j in [1..#BT[i]]];
+      end if;
+   end for;
+
+   return p, q;
+ 
+end function;
+////////////////////////////////////////////////////////////////////////////////
+//
+// Denoising
+//
+////////////////////////////////////////////////////////////////////////////////
+function Denoising(R, m, p, q, gamma)
+   pr        := Characteristic(R);
+   n         := Rank(R);
+   Lambdaq   := [];
+   ListEval  := [];
+   LambdaOK  := [];
+
+   for i:=1 to #q do
+      Lambdaq[i]  := [];
+      ListEval[i] := [];
+      for j:=1 to n do
+         Lambdaq[i][j] := MonomialCoefficient(q[i], R.j);
+      end for;
+
+      for k:=1 to #p do
+         ListEval[i][k] := Evaluate(p[k],Lambdaq[i]);
+      end for;
+
+      numberzeros := #[ x : x in [1..#ListEval[i]] | ListEval[i][x] eq 0];
+      if numberzeros ge gamma then
+         LambdaOK := LambdaOK cat [Lambdaq[i]];
+      end if;
+   end for;
+
+   EltsA := ZeroMatrix(GF(pr), #LambdaOK, n);
+   for i:=1 to #LambdaOK do
+      for j:=1 to #LambdaOK[i] do
+         EltsA[i][j] := LambdaOK[i][j];
+      end for;
+   end for;
+
+   BasisA := [];
+   if Rank(EchelonForm(EltsA)) ge n div 2 then
+      for i:=1 to n div 2 do
+         BasisA := BasisA cat [EchelonForm(EltsA)[i]];
+      end for;
+   else
+      "Algorithm failed.";
+   end if;
+
+   return BasisA;
+
+end function;
+////////////////////////////////////////////////////////////////////////////////
+//
+// Solve
+//
+////////////////////////////////////////////////////////////////////////////////
+function Solve(q, n, epsilon, d)
+   R     := PolynomialRing(GF(q), n);
+   beta  := 3/(1 - 2*epsilon)^2;
+   m     := Ceiling(beta*n);
+   gamma := Ceiling((1-epsilon)*m);
+   delta := m - gamma;
+
+   P, Q   := PublicPolys(R, m, d, delta);
+   BasisA := Denoising(R, m, P, Q, gamma);
+
+   return BasisA;
+end function;
